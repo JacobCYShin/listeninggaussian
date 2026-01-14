@@ -29,3 +29,8 @@ screenshots
 
 data/*
 !*.gitkeep
+
+# EMOCA related
+emoca/
+emoca_test.txt
+host_check.txt
