@@ -3,7 +3,7 @@ import torch
 import numpy as np
 
 
-def load_dir(path, start, end):
+def load_dir(path, start, end, device=None):
     lmss = []
     imgs_paths = []
     for i in range(start, end):
@@ -12,5 +12,7 @@ def load_dir(path, start, end):
             lmss.append(lms)
             imgs_paths.append(os.path.join(path, str(i) + ".jpg"))
     lmss = np.stack(lmss)
-    lmss = torch.as_tensor(lmss).cuda()
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    lmss = torch.as_tensor(lmss).to(device)
     return lmss, imgs_paths

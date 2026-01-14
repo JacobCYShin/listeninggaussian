@@ -2,6 +2,7 @@
 from argparse import ArgumentParser
 
 from mmseg.apis import inference_segmentor, init_segmentor, show_result_pyplot
+import torch
 
 import os
 import glob
@@ -15,6 +16,24 @@ def main():
     parser.add_argument('--checkpoint', default="./data_utils/easyportrait/fpn-fp-512.pth", help='Checkpoint file')
 
     args = parser.parse_args()
+
+    # Allow legacy checkpoint loading on torch>=2.6
+    try:
+        torch.serialization.set_default_load_weights_only(False)
+    except Exception:
+        pass
+    try:
+        torch.serialization.add_safe_globals([np.core.multiarray.scalar])
+    except Exception:
+        pass
+    try:
+        _orig_torch_load = torch.load
+        def _torch_load_compat(*args, **kwargs):
+            kwargs.setdefault("weights_only", False)
+            return _orig_torch_load(*args, **kwargs)
+        torch.load = _torch_load_compat
+    except Exception:
+        pass
 
     # build the model from a config file and a checkpoint file
     model = init_segmentor(args.config, args.checkpoint, device='cuda:0')

@@ -33,13 +33,14 @@ args = parser.parse_args()
 start_id = 0
 end_id = args.frame_num
 
-lms, img_paths = load_dir(args.path, start_id, end_id)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+lms, img_paths = load_dir(args.path, start_id, end_id, device=device)
 num_frames = lms.shape[0]
 h, w = args.img_h, args.img_w
-cxy = torch.tensor((w / 2.0, h / 2.0), dtype=torch.float).cuda()
+cxy = torch.tensor((w / 2.0, h / 2.0), dtype=torch.float, device=device)
 id_dim, exp_dim, tex_dim, point_num = 100, 79, 100, 34650
 model_3dmm = Face_3DMM(
-    os.path.join(dir_path, "3DMM"), id_dim, exp_dim, tex_dim, point_num
+    os.path.join(dir_path, "3DMM"), id_dim, exp_dim, tex_dim, point_num, device=device
 )
 
 # only use one image per 40 to do fit the focal length
@@ -179,8 +180,8 @@ print(f'[INFO] fitting light...')
 
 batch_size = 32
 
-device_default = torch.device("cuda:0")
-device_render = torch.device("cuda:0")
+device_default = device
+device_render = device
 renderer = Render_3DMM(arg_focal, h, w, batch_size, device_render)
 
 sel_ids = np.arange(0, num_frames, int(num_frames / batch_size))[:batch_size]
@@ -188,7 +189,7 @@ imgs = []
 for sel_id in sel_ids:
     imgs.append(cv2.imread(img_paths[sel_id])[:, :, ::-1])
 imgs = np.stack(imgs)
-sel_imgs = torch.as_tensor(imgs).cuda()
+sel_imgs = torch.as_tensor(imgs).to(device)
 sel_lms = lms[sel_ids]
 sel_light = light_para.new_zeros((batch_size, 27), requires_grad=True)
 set_requires_grad([sel_light])
@@ -271,7 +272,7 @@ for i in range(int((num_frames - 1) / batch_size + 1)):
     for sel_id in sel_ids:
         imgs.append(cv2.imread(img_paths[sel_id])[:, :, ::-1])
     imgs = np.stack(imgs)
-    sel_imgs = torch.as_tensor(imgs).cuda()
+    sel_imgs = torch.as_tensor(imgs).to(device)
     sel_lms = lms[sel_ids]
 
     sel_exp_para = exp_para.new_zeros((batch_size, exp_dim), requires_grad=True)

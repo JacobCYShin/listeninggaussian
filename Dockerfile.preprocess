@@ -1,0 +1,75 @@
+# 1. Base: CUDA 12.4 for preprocess
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TORCH_HOME=/workspace/.cache/torch
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV CUDA_HOME=/usr/local/cuda
+ENV MMCV_WITH_OPS=1
+ENV FORCE_CUDA=1
+
+# 2. System packages
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-dev \
+    git \
+    wget \
+    curl \
+    cmake \
+    build-essential \
+    ffmpeg \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsndfile1 \
+    portaudio19-dev \
+    alsa-utils \
+    ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. Python
+RUN ln -s /usr/bin/python3 /usr/bin/python
+RUN pip3 install --upgrade pip setuptools wheel ninja
+
+# 4. PyTorch (CUDA 12.4)
+RUN pip3 install --trusted-host download.pytorch.org \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# 5. Common deps
+RUN pip3 install --trusted-host pypi.org --trusted-host files.pythonhosted.org \
+    tqdm \
+    plyfile \
+    scikit-learn \
+    scikit-image \
+    opencv-python \
+    tensorboard \
+    tensorboardX \
+    pandas \
+    matplotlib \
+    rich \
+    packaging \
+    face_alignment \
+    python_speech_features \
+    numba \
+    resampy \
+    pyaudio \
+    soundfile \
+    configargparse \
+    lpips \
+    imageio-ffmpeg \
+    tensorflow \
+    openmim \
+    prettytable
+
+# 6. PyTorch3D (source build)
+ENV TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0+PTX"
+RUN pip install --trusted-host github.com --no-build-isolation \
+    "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+
+# 7. MMCV (build with CUDA ops for mmcv._ext)
+RUN pip3 install --trusted-host pypi.org --trusted-host files.pythonhosted.org \
+    --no-build-isolation --no-binary mmcv-full --force-reinstall \
+    mmcv-full==1.7.2
+
+WORKDIR /workspace

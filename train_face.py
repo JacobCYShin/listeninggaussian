@@ -368,7 +368,12 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
 
         if tb_writer:
-            tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
+            # Histogram logging is flaky on some numpy versions; skip on failure
+            try:
+                opac_np = scene.gaussians.get_opacity.detach().cpu().view(-1).float().numpy()
+                tb_writer.add_histogram("scene/opacity_histogram", opac_np, iteration)
+            except Exception as e:
+                print(f"[WARN] skip opacity histogram at iter {iteration}: {e}")
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
 

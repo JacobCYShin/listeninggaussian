@@ -95,7 +95,7 @@ def storePly(path, xyz, rgb):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
-def readCamerasFromTransforms(path, transformsfile, white_background, extension=".jpg", audio_file='', audio_extractor='deepspeech', preload=True):
+def readCamerasFromTransforms(path, transformsfile, white_background, extension=".jpg", audio_file='', audio_extractor='deepspeech', preload=False):
     cam_infos = []
     postfix_dict = {"deepspeech": "ds", "esperanto": "eo", "hubert": "hu"}
 
@@ -114,16 +114,17 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
         aud_features = aud_features.float().permute(0, 2, 1)
         auds = aud_features
 
-        au_info=pd.read_csv(os.path.join(path, 'au.csv'))
-        au_blink = au_info[' AU45_r'].values
-        au25 = au_info[' AU25_r'].values
+        au_info = pd.read_csv(os.path.join(path, 'au.csv'))
+        au_info.columns = [c.strip() for c in au_info.columns]
+        au_blink = au_info['AU45_r'].values
+        au25 = au_info['AU25_r'].values
         au25 = np.clip(au25, 0, np.percentile(au25, 95))
 
         au25_25, au25_50, au25_75, au25_100 = np.percentile(au25, 25), np.percentile(au25, 50), np.percentile(au25, 75), au25.max()
 
         au_exp = []
         for i in [1,4,5,6,7,45]:
-            _key = ' AU' + str(i).zfill(2) + '_r'
+            _key = 'AU' + str(i).zfill(2) + '_r'
             au_exp_t = au_info[_key].values
             if i == 45:
                 au_exp_t = au_exp_t.clip(0, 2)

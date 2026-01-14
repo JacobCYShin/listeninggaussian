@@ -47,10 +47,12 @@ def extract_landmarks(ori_imgs_dir):
     print(f'[INFO] ===== extract face landmarks from {ori_imgs_dir} =====')
 
     import face_alignment
+    import torch
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     try:
-        fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=False)
+        fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=False, device=device)
     except:
-        fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False)
+        fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False, device=device)
     image_paths = glob.glob(os.path.join(ori_imgs_dir, '*.jpg'))
     for image_path in tqdm.tqdm(image_paths):
         input = cv2.imread(image_path, cv2.IMREAD_UNCHANGED) # [H, W, 3]
@@ -390,7 +392,7 @@ if __name__ == '__main__':
     # extract torso images and gt_images
     if opt.task == -1 or opt.task == 6:
         extract_torso_and_gt(base_dir, ori_imgs_dir)
-
+   
     # extract face landmarks
     if opt.task == -1 or opt.task == 7:
         extract_landmarks(ori_imgs_dir)
@@ -402,4 +404,3 @@ if __name__ == '__main__':
     # save transforms.json
     if opt.task == -1 or opt.task == 9:
         save_transforms(base_dir, ori_imgs_dir)
-

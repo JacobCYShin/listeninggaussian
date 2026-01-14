@@ -16,6 +16,45 @@
   - 사내/사설 인증서 환경에서 `alexnet-owt-7be5be79.pth` 다운로드 실패 → 미리 받아서 `/workspace/.cache/torch/hub/checkpoints` 에 저장.
   - `TORCH_HOME=/workspace/.cache/torch` 로 통일(컨테이너 안에서 export 필요).
 
+## 타임라인 & 해결 요약 (2025-12-19 이후)
+- CUDA/torch 불일치 → Dockerfile을 CUDA 11.3 + torch 1.12.1/cu113 휠로 재작성, 빌드 완료.
+- 커스텀 확장 미로딩 → diff-gaussian-rasterization / simple-knn / gridencoder 재설치, `.pth` 경로 추가로 임포트 성공.
+- SSL 인증서로 LPIPS 가중치 다운로드 실패 → `alexnet-owt-7be5be79.pth`를 `curl -k`로 수동 캐시, `TORCH_HOME=/workspace/.cache/torch` 기본값 적용.
+- tensorboard proto 에러 → protobuf 3.20.3으로 다운그레이드.
+- Pillow ANTIALIAS 제거 → Pillow는 10 미만 유지(필요 시 `pip install "pillow<10"`).
+- tensorboard 히스토그램 dtype 에러 → opacity 텐서 `detach().cpu().view(-1).float().numpy()` 후 로깅, 실패 시 경고만 출력하도록 방어 코드 추가.
+- DeepSpeech pb 혼용 → v0.1.0이 아닌 pb를 쓰면 `deepspeech/logits:0` KeyError → 잘못된 pb 제거 후 `get_deepspeech_model_file()`로 v0.1.0 재다운로드하거나 `--deepspeech ~/.tensorflow/models/deepspeech-0_1_0-b90017e8.pb`로 명시하여 해결.
+- 인퍼런스 시 오디오 npy 미지정 → transforms에 기록된 기본 오디오 특징 사용. 렌더 mp4에는 오디오가 없으므로 ffmpeg로 오디오를 별도 mux 필요.
+- 렌더 속도 이슈 → `--eval`로 test 세트만 렌더, `--fast` 사용, 필요 시 카메라 슬라이스로 뷰 수 축소.
+
+## 주요 이슈별 정리 (원인 → 최종 해결)
+- **PyTorch/CUDA 버전 충돌**  
+  - 원인: 컨테이너 기본이 CUDA 12.4/torch 2.6 → 프로젝트 요구(CUDA 11.3/torch 1.12.1)와 불일치.  
+  - 해결: Dockerfile을 `nvidia/cuda:11.3.1-cudnn8-devel-ubuntu20.04` 베이스로 교체, 사전 다운로드한 cu113 휠로 torch 스택/ mmcv-full / pytorch3d 설치.
+
+- **커스텀 확장 임포트 실패**  
+  - 원인: editable 설치가 `/usr/lib/python3.8/site-packages/*.egg-link`에 깔리고 `sys.path`에 잡히지 않음.  
+  - 해결: diff-gaussian-rasterization / simple-knn / gridencoder를 다시 설치하고, `/usr/local/lib/python3.8/dist-packages/local-projects.pth`에 소스 경로를 추가.
+
+- **SSL 인증서로 모델 가중치 다운로드 실패**  
+  - 원인: 사설 인증서 체인으로 LPIPS용 AlexNet 가중치 다운로드 오류.  
+  - 해결: `curl -k`로 `/workspace/.cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth` 캐시, `TORCH_HOME=/workspace/.cache/torch`로 통일. (scripts/train_xx.sh에 기본값 설정)
+
+- **TensorBoard 관련 오류**  
+  - proto 오류: protobuf 5.x → tensorboard proto 불일치 → `pip install 'protobuf<3.21'`.  
+  - 이미지 로깅: Pillow 10에서 ANTIALIAS 제거 → Pillow <10 유지.  
+  - 히스토그램 로깅: numpy ufunc dtype 에러 → opacity 텐서를 CPU/float/numpy로 변환하고, 실패 시 경고만 출력하도록 수정.
+
+- **체크포인트 없음으로 fuse/metrics 실패**  
+  - 원인: 앞 단계(mouth/face)가 SSL/로깅 오류로 중단되어 `chkpnt_face_latest.pth` / `chkpnt_fuse_latest.pth`가 생성되지 않음.  
+  - 해결: 상기 SSL/로깅 문제 해결 후 mouth → face → fuse 순서로 재학습하여 체크포인트 생성.
+- **DeepSpeech 특징 추출 실패**  
+  - 원인: v0.1.0이 아닌 pb를 로드해 `deepspeech/logits:0` 노드가 없어 KeyError 발생.  
+  - 해결: 잘못된 pb를 제거 후 `deepspeech-0_1_0-b90017e8.pb`를 `get_deepspeech_model_file()`로 다시 받아 지정하거나 `--deepspeech ~/.tensorflow/models/deepspeech-0_1_0-b90017e8.pb`로 명시.
+- **렌더 mp4에 오디오 없음**  
+  - 원인: `synthesize_fuse.py`는 영상만 생성, 오디오 트랙을 mux하지 않음.  
+  - 해결: ffmpeg로 오디오 wav와 mp4를 mux (예: `ffmpeg -i video.mp4 -i audio.wav -c:v copy -c:a aac -shortest out.mp4`).
+
 ## Dockerfile 관련
 - 베이스 이미지를 `nvidia/cuda:11.3.1-cudnn8-devel-ubuntu20.04` 로 교체.
 - 미리 받아둔 휠(`wheels/` 디렉터리)로 torch/vision/audio, mmcv-full, pytorch3d 설치.

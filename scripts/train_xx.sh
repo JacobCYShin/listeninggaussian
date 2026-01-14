@@ -22,3 +22,5 @@ python train_fuse.py -s $dataset -m $workspace --opacity_lr 0.001 --audio_extrac
 
 python synthesize_fuse.py -s $dataset -m $workspace --eval --audio_extractor $audio_extractor
 python metrics.py $workspace/test/ours_None/renders/out.mp4 $workspace/test/ours_None/gt/out.mp4
+
+# python train_face.py  -s data/macron -m output/macron_project --init_num 2000 --densify_grad_threshold 0.0005 --audio_extractor deepspeech && python train_fuse.py  -s data/macron -m output/macron_project --opacity_lr 0.001 --audio_extractor deepspeech

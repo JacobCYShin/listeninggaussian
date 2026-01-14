@@ -1,5 +1,6 @@
 import cv2
 import sys
+import os
 import lpips
 import numpy as np
 from matplotlib import pyplot as plt
@@ -24,10 +25,26 @@ class LMDMeter:
         else:
 
             import face_alignment
+            import ssl
+            import urllib.request
+            
+            # SSL 인증서 검증 비활성화 (임시 조치)
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            # urllib의 SSL 컨텍스트 설정
+            original_ssl_context = ssl._create_default_https_context
+            ssl._create_default_https_context = ssl._create_unverified_context
+            
             try:
-                self.predictor = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=False)
-            except:
-                self.predictor = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False)
+                try:
+                    self.predictor = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=False)
+                except:
+                    self.predictor = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False)
+            finally:
+                # SSL 컨텍스트 복원
+                ssl._create_default_https_context = original_ssl_context
 
         self.V = 0
         self.N = 0

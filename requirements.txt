@@ -1,0 +1,33 @@
+# --- PyTorch (CUDA 11.3 버전) ---
+torch==1.12.1
+torchvision==0.13.1
+torchaudio==0.12.1
+
+# --- Core packages ---
+numpy==1.24.4
+pandas==2.0.3
+pillow
+scipy
+tensorboard
+tensorboardX
+opencv-python
+tqdm
+matplotlib
+PyMCubes==0.1.4
+rich
+packaging
+scikit-learn
+face_alignment==1.4.1
+python_speech_features
+numba
+resampy
+pyaudio
+soundfile
+configargparse
+lpips
+imageio-ffmpeg
+
+# # --- Local editable packages ---
+# ./submodules/diff-gaussian-rasterization
+# ./submodules/simple-knn
+# ./gridencoder

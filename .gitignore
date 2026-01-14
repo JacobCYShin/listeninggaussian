@@ -4,6 +4,15 @@ build/
 *.so
 *.mp4
 *.pth
+*.pdf
+*.tar.gz
+*.tgz
+*.gz
+*.zip
+*.whl
+*Zone.Identifier
+.cache/
+wheels/
 
 data_utils/face_tracking/3DMM/*
 data_utils/face_parsing/79999_iter.pth
