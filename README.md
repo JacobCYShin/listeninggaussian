@@ -1,5 +1,7 @@
 # Diff-Listener: Probabilistic 3D Listening Head Generation via Diffusion-based Gaussian Splatting
 
+**한국어**: [README_KR.md](README_KR.md)
+
 This repository implements **Diff-Listener**, a probabilistic 3D listening head generation system that combines diffusion-based motion generation with high-fidelity 3D Gaussian Splatting rendering.
 
 ## Overview

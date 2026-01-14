@@ -34,3 +34,8 @@ data/*
 emoca/
 emoca_test.txt
 host_check.txt
+
+# Development plans (keep local only)
+개발계획_v1.md
+개발계획_v2.md
+연구방향.md
