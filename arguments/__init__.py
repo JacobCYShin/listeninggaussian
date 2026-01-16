@@ -55,6 +55,7 @@ class ModelParams(ParamGroup):
         self.data_device = "cpu"
         self.eval = False
         self.audio = ""
+        self.flame_params = ""
         self.init_num = 10_000
         self.audio_extractor = "deepspeech"
         super().__init__(parser, "Loading Parameters", sentinel)

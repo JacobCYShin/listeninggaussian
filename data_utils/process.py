@@ -3,6 +3,7 @@ import glob
 import tqdm
 import json
 import argparse
+import ssl
 import cv2
 import numpy as np
 
@@ -49,6 +50,7 @@ def extract_landmarks(ori_imgs_dir):
     import face_alignment
     import torch
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    ssl._create_default_https_context = ssl._create_unverified_context
     try:
         fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=False, device=device)
     except:
@@ -58,6 +60,8 @@ def extract_landmarks(ori_imgs_dir):
         input = cv2.imread(image_path, cv2.IMREAD_UNCHANGED) # [H, W, 3]
         input = cv2.cvtColor(input, cv2.COLOR_BGR2RGB)
         preds = fa.get_landmarks(input)
+        if preds is None:
+            continue
         if len(preds) > 0:
             lands = preds[0].reshape(-1, 2)[:,:2]
             np.savetxt(image_path.replace('jpg', 'lms'), lands, '%f')
@@ -83,11 +87,22 @@ def extract_background(base_dir, ori_imgs_dir):
     distss = []
     for image_path in tqdm.tqdm(image_paths):
         parse_img = cv2.imread(image_path.replace('ori_imgs', 'parsing').replace('.jpg', '.png'))
+        if parse_img is None:
+            continue
         bg = (parse_img[..., 0] == 255) & (parse_img[..., 1] == 255) & (parse_img[..., 2] == 255)
         fg_xys = np.stack(np.nonzero(~bg)).transpose(1, 0)
+        if fg_xys.shape[0] == 0:
+            # Skip frames with empty foreground to avoid crashing.
+            continue
         nbrs = NearestNeighbors(n_neighbors=1, algorithm='kd_tree').fit(fg_xys)
         dists, _ = nbrs.kneighbors(all_xys)
         distss.append(dists)
+
+    if len(distss) == 0:
+        bc_img = np.zeros((h, w, 3), dtype=np.uint8)
+        cv2.imwrite(os.path.join(base_dir, 'bc.jpg'), bc_img)
+        print('[WARN] No valid foreground found; wrote black bc.jpg')
+        return
 
     distss = np.stack(distss)
     max_dist = np.max(distss, 0)

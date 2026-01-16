@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.model_zoo as modelzoo
+import ssl
 
 # from modules.bn import InPlaceABNSync as BatchNorm2d
 
@@ -80,6 +81,7 @@ class Resnet18(nn.Module):
         return feat8, feat16, feat32
 
     def init_weight(self):
+        ssl._create_default_https_context = ssl._create_unverified_context
         state_dict = modelzoo.load_url(resnet18_url)
         self_state_dict = self.state_dict()
         for k, v in state_dict.items():

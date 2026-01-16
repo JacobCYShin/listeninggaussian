@@ -138,8 +138,16 @@ def render_motion(viewpoint_camera, pc : GaussianModel, motion_net : MotionNetwo
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
     
-    audio_feat = viewpoint_camera.talking_dict["auds"].cuda()
-    exp_feat = viewpoint_camera.talking_dict["au_exp"].cuda()
+    if "flame_params" in viewpoint_camera.talking_dict:
+        audio_feat = viewpoint_camera.talking_dict["flame_params"].cuda()
+        exp_feat = viewpoint_camera.talking_dict.get("au45", None)
+        if exp_feat is not None:
+            exp_feat = exp_feat.float()
+        if exp_feat is not None:
+            exp_feat = exp_feat.cuda()
+    else:
+        audio_feat = viewpoint_camera.talking_dict["auds"].cuda()
+        exp_feat = viewpoint_camera.talking_dict["au_exp"].cuda()
 
     # ind_code = motion_net.individual_codes[frame_idx if frame_idx is not None else viewpoint_camera.talking_dict["img_id"]]
     ind_code = None
@@ -233,7 +241,10 @@ def render_motion_mouth(viewpoint_camera, pc : GaussianModel, motion_net : Mouth
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
     
-    audio_feat = viewpoint_camera.talking_dict["auds"].cuda()
+    if "flame_params" in viewpoint_camera.talking_dict:
+        audio_feat = viewpoint_camera.talking_dict["flame_params"].cuda()
+    else:
+        audio_feat = viewpoint_camera.talking_dict["auds"].cuda()
 
     motion_preds = motion_net(pc.get_xyz, audio_feat)
     means3D = pc.get_xyz + motion_preds['d_xyz']
@@ -268,4 +279,3 @@ def render_motion_mouth(viewpoint_camera, pc : GaussianModel, motion_net : Mouth
             "alpha": rendered_alpha,
             "radii": radii,
             "motion": motion_preds}
-

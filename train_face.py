@@ -10,6 +10,7 @@
 #
 
 import os
+import ssl
 import random
 import torch
 from random import randint
@@ -33,7 +34,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, disable_mouth_sampling=False):
     testing_iterations = [i for i in range(0, opt.iterations + 1, 2000)]
     checkpoint_iterations =  saving_iterations = [i for i in range(0, opt.iterations + 1, 10000)] + [opt.iterations]
 
@@ -44,6 +45,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     lpips_start_iter = opt.densify_until_iter - 2000
     motion_stop_iter = bg_iter
     mouth_select_iter = bg_iter - 10000
+    if disable_mouth_sampling:
+        mouth_select_iter = 1
     mouth_step = 1 / mouth_select_iter
     hair_mask_interval = 7
     select_interval = 15
@@ -112,7 +115,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         au_lb = au_lb - au_window * 0.5
 
 
-        if iteration < warm_step:
+        if iteration < warm_step and not disable_mouth_sampling:
             if iteration % select_interval == 0:
                 while viewpoint_cam.talking_dict['mouth_bound'][2] < mouth_lb or viewpoint_cam.talking_dict['mouth_bound'][2] > mouth_ub:
                     if not viewpoint_stack:
@@ -120,8 +123,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
 
-        if warm_step < iteration < mouth_select_iter:
-
+        if warm_step < iteration < mouth_select_iter and not disable_mouth_sampling:
             if iteration % select_interval == 0:
                 while viewpoint_cam.talking_dict['blink'] < au_lb or viewpoint_cam.talking_dict['blink'] > au_ub:
                     if not viewpoint_stack:
@@ -378,6 +380,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         torch.cuda.empty_cache()
 
 if __name__ == "__main__":
+    ssl._create_default_https_context = ssl._create_unverified_context
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)
@@ -392,6 +395,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--no_mouth_sampling", action="store_true", default=False)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
@@ -402,7 +406,7 @@ if __name__ == "__main__":
 
     # Start GUI server, configure and run training
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, disable_mouth_sampling=args.no_mouth_sampling)
 
     # All done
     print("\nTraining complete.")

@@ -346,3 +346,4 @@ rotations = pc.rotation_activation(pc._rotation + motion_preds['d_rot'])
 - `06_Rendering.md`: 변형된 Gaussian을 렌더링하는 과정
 - `01_Inference_Pipeline.md`: 추론 파이프라인
 
+

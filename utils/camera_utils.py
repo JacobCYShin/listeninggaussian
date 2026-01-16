@@ -80,14 +80,20 @@ def loadCamOnTheFly(camera):
     torso_img = PILtoTorch(np.array(Image.open(torso_img_path).convert("RGBA")) * 1.0).to(camera.data_device)
     bg = torso_img[:3] * torso_img[3:] / 255 + bg_img * (1.0 - torso_img[3:] / 255)
 
-    teeth_mask_path = image_path.replace("gt_imgs", "teeth_mask").replace("jpg", "npy")
-    teeth_mask = torch.as_tensor(np.load(teeth_mask_path)).to(camera.data_device)
-
     mask_path = image_path.replace("gt_imgs", "parsing").replace("jpg", "png")
     mask = PILtoTorch(np.array(Image.open(mask_path).convert("RGB")) * 1.0).to(camera.data_device)
-    camera.talking_dict['face_mask'] = (mask[2] > 254) * (mask[0] == 0) * (mask[1] == 0) ^ teeth_mask
-    camera.talking_dict['hair_mask'] = (mask[0] < 1) * (mask[1] < 1) * (mask[2] < 1)
-    camera.talking_dict['mouth_mask'] = (mask[0] == 100) * (mask[1] == 100) * (mask[2] == 100) + teeth_mask
+    teeth_mask_path = image_path.replace("gt_imgs", "teeth_mask").replace("jpg", "npy")
+    if os.path.exists(teeth_mask_path):
+        teeth_mask = torch.as_tensor(np.load(teeth_mask_path)).to(camera.data_device)
+    else:
+        teeth_mask = torch.zeros_like(mask[0]).to(camera.data_device)
+    face_mask = (mask[2] > 254) & (mask[0] == 0) & (mask[1] == 0)
+    hair_mask = (mask[0] < 1) & (mask[1] < 1) & (mask[2] < 1)
+    mouth_mask = (mask[0] == 100) & (mask[1] == 100) & (mask[2] == 100)
+    teeth_mask = teeth_mask.bool()
+    camera.talking_dict['face_mask'] = face_mask.bool() ^ teeth_mask
+    camera.talking_dict['hair_mask'] = hair_mask.bool()
+    camera.talking_dict['mouth_mask'] = mouth_mask.bool() | teeth_mask
     
     camera.original_image = PILtoTorch(image).type("torch.ByteTensor").clamp(0, 255).to(camera.data_device)
     camera.background = bg.type("torch.ByteTensor").clamp(0, 255).to(camera.data_device)

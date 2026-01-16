@@ -296,3 +296,4 @@ render_sets()
 - `05_Motion_Network.md`: Motion Network가 어떻게 오디오를 변형으로 변환하는지
 - `04_Gaussian_Model.md`: Gaussian 모델의 구조와 파라미터
 
+

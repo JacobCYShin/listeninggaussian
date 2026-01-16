@@ -97,11 +97,14 @@ class MotionNetwork(nn.Module):
                  ):
         super(MotionNetwork, self).__init__()
 
-        if 'esperanto' in args.audio_extractor:
+        self.audio_extractor = args.audio_extractor
+        if self.audio_extractor == 'flame':
+            self.audio_in_dim = 56
+        elif 'esperanto' in self.audio_extractor:
             self.audio_in_dim = 44
-        elif 'deepspeech' in args.audio_extractor:
+        elif 'deepspeech' in self.audio_extractor:
             self.audio_in_dim = 29
-        elif 'hubert' in args.audio_extractor:
+        elif 'hubert' in self.audio_extractor:
             self.audio_in_dim = 1024
         else:
             raise NotImplementedError
@@ -116,9 +119,12 @@ class MotionNetwork(nn.Module):
 
         # audio network
         self.audio_dim = audio_dim
-        self.audio_net = AudioNet(self.audio_in_dim, self.audio_dim)
-
-        self.audio_att_net = AudioAttNet(self.audio_dim)
+        if self.audio_extractor == 'flame':
+            self.audio_net = MLP(self.audio_in_dim, self.audio_dim, 64, 2)
+            self.audio_att_net = None
+        else:
+            self.audio_net = AudioNet(self.audio_in_dim, self.audio_dim)
+            self.audio_att_net = AudioAttNet(self.audio_dim)
 
         # DYNAMIC PART
         self.num_levels = 12
@@ -133,15 +139,22 @@ class MotionNetwork(nn.Module):
         self.num_layers = 3       
         self.hidden_dim = 64
 
-        self.exp_in_dim = 6 - 1
-        self.eye_dim = 6 if self.exp_eye else 0
-        self.exp_encode_net = MLP(self.exp_in_dim, self.eye_dim - 1, 16, 2)
-
-        self.eye_att_net = MLP(self.in_dim, self.eye_dim, 16, 2)
+        self.use_exp = True
+        if self.audio_extractor == 'flame':
+            self.exp_in_dim = 1
+            self.eye_dim = 1 if self.exp_eye else 0
+            self.exp_encode_net = MLP(self.exp_in_dim, self.eye_dim, 16, 2)
+            self.eye_att_net = MLP(self.in_dim, self.eye_dim, 16, 2)
+        else:
+            self.exp_in_dim = 6 - 1
+            self.eye_dim = 6 if self.exp_eye else 0
+            self.exp_encode_net = MLP(self.exp_in_dim, self.eye_dim - 1, 16, 2)
+            self.eye_att_net = MLP(self.in_dim, self.eye_dim, 16, 2)
 
         # rot: 4   xyz: 3   opac: 1  scale: 3
         self.out_dim = 11
-        self.sigma_net = MLP(self.in_dim + self.audio_dim + self.eye_dim + self.individual_dim, self.out_dim, self.hidden_dim, self.num_layers)
+        sigma_in_dim = self.in_dim + self.audio_dim + self.individual_dim + (self.eye_dim if self.use_exp else 0)
+        self.sigma_net = MLP(sigma_in_dim, self.out_dim, self.hidden_dim, self.num_layers)
         
         self.aud_ch_att_net = MLP(self.in_dim, self.audio_dim, 32, 2)
 
@@ -171,6 +184,12 @@ class MotionNetwork(nn.Module):
         # fix audio traininig
         if a is None: return None
 
+        if self.audio_extractor == 'flame':
+            if a.dim() == 1:
+                a = a.unsqueeze(0)
+            enc_a = self.audio_net(a) # [1, 64]
+            return enc_a
+
         enc_a = self.audio_net(a) # [1/8, 64]
         enc_a = self.audio_att_net(enc_a.unsqueeze(0)) # [1, 64]
             
@@ -182,19 +201,36 @@ class MotionNetwork(nn.Module):
         enc_x = self.encode_x(x, bound=self.bound)
 
         enc_a = self.encode_audio(a)
+        if enc_a is None:
+            enc_a = torch.zeros((1, self.audio_dim), device=enc_x.device, dtype=enc_x.dtype)
         enc_a = enc_a.repeat(enc_x.shape[0], 1)
         aud_ch_att = self.aud_ch_att_net(enc_x)
         enc_w = enc_a * aud_ch_att
         
-        eye_att = torch.relu(self.eye_att_net(enc_x))
-        enc_e = self.exp_encode_net(e[:-1])
-        enc_e = torch.cat([enc_e, e[-1:]], dim=-1)
-        enc_e = enc_e * eye_att
-        if c is not None:
-            c = c.repeat(enc_x.shape[0], 1)
-            h = torch.cat([enc_x, enc_w, enc_e, c], dim=-1)
+        if self.use_exp:
+            if e is None:
+                e = torch.zeros(self.eye_dim, device=enc_x.device, dtype=enc_x.dtype)
+            eye_att = torch.relu(self.eye_att_net(enc_x))
+            if self.exp_in_dim == 1:
+                if e.dim() == 0:
+                    e = e.unsqueeze(0)
+                enc_e = self.exp_encode_net(e)
+            else:
+                enc_e = self.exp_encode_net(e[:-1])
+                enc_e = torch.cat([enc_e, e[-1:]], dim=-1)
+            enc_e = enc_e * eye_att
+            if c is not None:
+                c = c.repeat(enc_x.shape[0], 1)
+                h = torch.cat([enc_x, enc_w, enc_e, c], dim=-1)
+            else:
+                h = torch.cat([enc_x, enc_w, enc_e], dim=-1)
         else:
-            h = torch.cat([enc_x, enc_w, enc_e], dim=-1)
+            eye_att = torch.zeros((enc_x.shape[0], 1), device=enc_x.device, dtype=enc_x.dtype)
+            if c is not None:
+                c = c.repeat(enc_x.shape[0], 1)
+                h = torch.cat([enc_x, enc_w, c], dim=-1)
+            else:
+                h = torch.cat([enc_x, enc_w], dim=-1)
 
         h = self.sigma_net(h)
 
@@ -222,13 +258,15 @@ class MotionNetwork(nn.Module):
             {'params': self.encoder_xz.parameters(), 'lr': lr},
             {'params': self.sigma_net.parameters(), 'lr': lr_net, 'weight_decay': wd},
         ]
-        params.append({'params': self.audio_att_net.parameters(), 'lr': lr_net * 5, 'weight_decay': 0.0001})
+        if self.audio_att_net is not None:
+            params.append({'params': self.audio_att_net.parameters(), 'lr': lr_net * 5, 'weight_decay': 0.0001})
         if self.individual_dim > 0:
             params.append({'params': self.individual_codes, 'lr': lr_net, 'weight_decay': wd})
         
         params.append({'params': self.aud_ch_att_net.parameters(), 'lr': lr_net, 'weight_decay': wd})
-        params.append({'params': self.eye_att_net.parameters(), 'lr': lr_net, 'weight_decay': wd})
-        params.append({'params': self.exp_encode_net.parameters(), 'lr': lr_net, 'weight_decay': wd})
+        if self.use_exp:
+            params.append({'params': self.eye_att_net.parameters(), 'lr': lr_net, 'weight_decay': wd})
+            params.append({'params': self.exp_encode_net.parameters(), 'lr': lr_net, 'weight_decay': wd})
 
         return params
 
@@ -243,11 +281,14 @@ class MouthMotionNetwork(nn.Module):
                  ):
         super(MouthMotionNetwork, self).__init__()
 
-        if 'esperanto' in args.audio_extractor:
+        self.audio_extractor = args.audio_extractor
+        if self.audio_extractor == 'flame':
+            self.audio_in_dim = 56
+        elif 'esperanto' in self.audio_extractor:
             self.audio_in_dim = 44
-        elif 'deepspeech' in args.audio_extractor:
+        elif 'deepspeech' in self.audio_extractor:
             self.audio_in_dim = 29
-        elif 'hubert' in args.audio_extractor:
+        elif 'hubert' in self.audio_extractor:
             self.audio_in_dim = 1024
         else:
             raise NotImplementedError
@@ -262,9 +303,12 @@ class MouthMotionNetwork(nn.Module):
 
         # audio network
         self.audio_dim = audio_dim
-        self.audio_net = AudioNet(self.audio_in_dim, self.audio_dim)
-
-        self.audio_att_net = AudioAttNet(self.audio_dim)
+        if self.audio_extractor == 'flame':
+            self.audio_net = MLP(self.audio_in_dim, self.audio_dim, 64, 2)
+            self.audio_att_net = None
+        else:
+            self.audio_net = AudioNet(self.audio_in_dim, self.audio_dim)
+            self.audio_att_net = AudioAttNet(self.audio_dim)
 
         # DYNAMIC PART
         self.num_levels = 12
@@ -291,6 +335,12 @@ class MouthMotionNetwork(nn.Module):
 
         # fix audio traininig
         if a is None: return None
+
+        if self.audio_extractor == 'flame':
+            if a.dim() == 1:
+                a = a.unsqueeze(0)
+            enc_a = self.audio_net(a) # [1, 64]
+            return enc_a
 
         enc_a = self.audio_net(a) # [1/8, 64]
         enc_a = self.audio_att_net(enc_a.unsqueeze(0)) # [1, 64]
@@ -321,6 +371,8 @@ class MouthMotionNetwork(nn.Module):
         enc_x = self.encode_x(x, bound=self.bound)
 
         enc_a = self.encode_audio(a)
+        if enc_a is None:
+            enc_a = torch.zeros((1, self.audio_dim), device=enc_x.device, dtype=enc_x.dtype)
         enc_w = enc_a.repeat(enc_x.shape[0], 1)
         # aud_ch_att = self.aud_ch_att_net(enc_x)
         # enc_w = enc_a * aud_ch_att
@@ -348,7 +400,8 @@ class MouthMotionNetwork(nn.Module):
             {'params': self.encoder_xz.parameters(), 'lr': lr},
             {'params': self.sigma_net.parameters(), 'lr': lr_net, 'weight_decay': wd},
         ]
-        params.append({'params': self.audio_att_net.parameters(), 'lr': lr_net * 5, 'weight_decay': 0.0001})
+        if self.audio_att_net is not None:
+            params.append({'params': self.audio_att_net.parameters(), 'lr': lr_net * 5, 'weight_decay': 0.0001})
         if self.individual_dim > 0:
             params.append({'params': self.individual_codes, 'lr': lr_net, 'weight_decay': wd})
         

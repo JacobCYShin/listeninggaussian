@@ -95,7 +95,7 @@ def storePly(path, xyz, rgb):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
-def readCamerasFromTransforms(path, transformsfile, white_background, extension=".jpg", audio_file='', audio_extractor='deepspeech', preload=False):
+def readCamerasFromTransforms(path, transformsfile, white_background, extension=".jpg", audio_file='', audio_extractor='deepspeech', flame_params_path='', preload=False):
     cam_infos = []
     postfix_dict = {"deepspeech": "ds", "esperanto": "eo", "hubert": "hu"}
 
@@ -106,13 +106,32 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
 
         frames = contents["frames"]
         
-        if audio_file == '':
-            aud_features = np.load(os.path.join(path, 'aud_{}.npy'.format(postfix_dict[audio_extractor])))
+        flame_params = None
+        flame_mean = None
+        flame_std = None
+        if audio_extractor == 'flame':
+            flame_params_path = flame_params_path or os.path.join(path, 'flame_params.npy')
+            if not os.path.exists(flame_params_path):
+                raise FileNotFoundError(f"FLAME params not found: {flame_params_path}")
+            flame_params = np.load(flame_params_path)
+            if flame_params.ndim != 2 or flame_params.shape[1] < 56:
+                raise ValueError(f"Invalid FLAME params shape: {flame_params.shape}")
+            flame_mean = flame_params.mean(axis=0)
+            flame_std = flame_params.std(axis=0)
+            flame_std = np.where(flame_std < 1e-6, 1.0, flame_std)
+            flame_params = (flame_params - flame_mean) / flame_std
+            stats_path = os.path.join(path, 'flame_params_stats.npz')
+            if not os.path.exists(stats_path):
+                np.savez(stats_path, mean=flame_mean, std=flame_std)
+            print(f"[FLAME] Loaded {flame_params_path} shape={flame_params.shape}")
         else:
-            aud_features = np.load(audio_file)
-        aud_features = torch.from_numpy(aud_features)
-        aud_features = aud_features.float().permute(0, 2, 1)
-        auds = aud_features
+            if audio_file == '':
+                aud_features = np.load(os.path.join(path, 'aud_{}.npy'.format(postfix_dict[audio_extractor])))
+            else:
+                aud_features = np.load(audio_file)
+            aud_features = torch.from_numpy(aud_features)
+            aud_features = aud_features.float().permute(0, 2, 1)
+            auds = aud_features
 
         au_info = pd.read_csv(os.path.join(path, 'au.csv'))
         au_info.columns = [c.strip() for c in au_info.columns]
@@ -206,18 +225,26 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
 
 
             
-            if audio_file == '':
-                talking_dict['auds'] = get_audio_features(auds, 2, frame['img_id'])
-                if frame['img_id'] > auds.shape[0]:
-                    print("[warnining] audio feature is too short")
+            if audio_extractor == 'flame':
+                if frame['img_id'] >= flame_params.shape[0]:
+                    print("[warning] FLAME params are shorter than frames")
                     break
+                talking_dict['flame_params'] = torch.as_tensor(flame_params[frame['img_id']]).float()
             else:
-                talking_dict['auds'] = get_audio_features(auds, 2, idx)
-                if idx >= auds.shape[0]:
-                    break
+                if audio_file == '':
+                    talking_dict['auds'] = get_audio_features(auds, 2, frame['img_id'])
+                    if frame['img_id'] > auds.shape[0]:
+                        print("[warnining] audio feature is too short")
+                        break
+                else:
+                    talking_dict['auds'] = get_audio_features(auds, 2, idx)
+                    if idx >= auds.shape[0]:
+                        break
 
 
-            talking_dict['blink'] = torch.as_tensor(np.clip(au_blink[frame['img_id']], 0, 2) / 2)
+            blink_val = np.clip(au_blink[frame['img_id']], 0, 2) / 2
+            talking_dict['blink'] = torch.as_tensor(blink_val)
+            talking_dict['au45'] = torch.as_tensor(blink_val)
             talking_dict['au25'] = [au25[frame['img_id']], au25_25, au25_50, au25_75, au25_100]
 
             talking_dict['au_exp'] = torch.as_tensor(au_exp[frame['img_id']])
@@ -258,11 +285,12 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
 def readNerfSyntheticInfo(path, white_background, eval, extension=".jpg", args=None):
     audio_file = args.audio
     audio_extractor = args.audio_extractor
+    flame_params_path = args.flame_params
     if not eval:
         print("Reading Training Transforms")
-        train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension, audio_file, audio_extractor)
+        train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension, audio_file, audio_extractor, flame_params_path)
     print("Reading Test Transforms")
-    test_cam_infos = readCamerasFromTransforms(path, "transforms_val.json", white_background, extension, audio_file, audio_extractor)
+    test_cam_infos = readCamerasFromTransforms(path, "transforms_val.json", white_background, extension, audio_file, audio_extractor, flame_params_path)
     
     # if not eval:
     #     train_cam_infos.extend(test_cam_infos)

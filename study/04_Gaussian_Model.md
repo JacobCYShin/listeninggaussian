@@ -316,3 +316,4 @@ rotations = pc.rotation_activation(pc._rotation + motion_preds['d_rot'])  # 회�
 - `05_Motion_Network.md`: Motion Network가 Gaussian을 어떻게 변형하는지
 - `06_Rendering.md`: 변형된 Gaussian을 어떻게 렌더링하는지
 
+

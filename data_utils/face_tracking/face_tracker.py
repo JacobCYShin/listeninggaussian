@@ -33,7 +33,8 @@ args = parser.parse_args()
 start_id = 0
 end_id = args.frame_num
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+force_cpu = os.environ.get("TG_FORCE_CPU", "").lower() in ("1", "true", "yes")
+device = torch.device("cpu" if force_cpu else ("cuda" if torch.cuda.is_available() else "cpu"))
 lms, img_paths = load_dir(args.path, start_id, end_id, device=device)
 num_frames = lms.shape[0]
 h, w = args.img_h, args.img_w
